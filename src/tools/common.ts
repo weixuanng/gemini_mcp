@@ -185,8 +185,11 @@ export function describeError(err: unknown, deps: ToolDeps): string {
   }
   if (err instanceof GeminiApiError) {
     const msg = err.message;
-    if (err.reason === 'API_KEY_INVALID' || /api key not valid/i.test(msg)) {
-      return 'The Gemini API key configured on this server is invalid or was revoked. The server owner needs to update GEMINI_API_KEY.';
+    if (err.reason === 'API_KEY_INVALID' || /api key not valid/i.test(msg) || err.httpStatus === 401) {
+      return (
+        `The Gemini API key configured on this server was rejected (${msg}). It may be mistyped, deleted, or blocked as leaked. ` +
+        'Create a new key at https://aistudio.google.com/apikey and run: UPDATE_GEMINI_KEY=1 ./deploy/cloudrun.sh'
+      );
     }
     if (/location is not supported/i.test(msg)) {
       return `Gemini refused the request because the server's region isn't supported by the Gemini API: ${msg}`;

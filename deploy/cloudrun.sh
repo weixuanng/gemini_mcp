@@ -35,17 +35,46 @@ command -v gcloud >/dev/null 2>&1 || die "gcloud CLI not found. Run this in Goog
 [[ -f Dockerfile && -f package.json ]] || die "Run this script from the repository root (the folder that contains the Dockerfile)."
 
 # --- Project -----------------------------------------------------------------------------------
+valid_project_id() { [[ "$1" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]; }
+looks_like_api_key() { [[ "$1" == AIza* || "$1" == AQ.* ]]; }
+
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
-if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then
-  echo "Your Google Cloud projects:"
-  gcloud projects list --format='value(projectId)' --limit=20 || true
-  read -rp "Project ID to deploy into: " PROJECT_ID
-  [[ -n "$PROJECT_ID" ]] || die "No project ID given. Create one at https://console.cloud.google.com/projectcreate"
+if ! valid_project_id "$PROJECT_ID"; then
+  PROJECTS=()
+  while IFS= read -r p; do
+    [[ -n "$p" ]] && PROJECTS+=("$p")
+  done < <(gcloud projects list --format='value(projectId)' --sort-by=projectId 2>/dev/null || true)
+  ((${#PROJECTS[@]} > 0)) ||
+    die "No Google Cloud projects found. Create one at https://console.cloud.google.com/projectcreate, then re-run."
+
+  echo "Which Google Cloud project should host the server?"
+  for i in "${!PROJECTS[@]}"; do printf '  %d) %s\n' "$((i + 1))" "${PROJECTS[$i]}"; done
+  while true; do
+    read -rp "Type a number from the list: " choice
+    choice="${choice//[[:space:]]/}"
+    if [[ "$choice" =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= ${#PROJECTS[@]})); then
+      PROJECT_ID="${PROJECTS[$((choice - 1))]}"
+      break
+    elif looks_like_api_key "$choice"; then
+      warn "That looks like your Gemini API key, not a project. It wasn't saved anywhere; the script asks for the key in a later step."
+    elif valid_project_id "$choice"; then
+      PROJECT_ID="$choice"
+      break
+    else
+      warn "Please type one of the numbers shown (1-${#PROJECTS[@]})."
+    fi
+  done
 fi
-gcloud config set project "$PROJECT_ID" >/dev/null 2>&1
+gcloud config set project "$PROJECT_ID" >/dev/null 2>&1 ||
+  die "Couldn't switch to project $PROJECT_ID. Check the ID with: gcloud projects list"
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')" ||
   die "Can't access project $PROJECT_ID. Check the ID and that you're logged in (gcloud auth login)."
 info "Project: $PROJECT_ID ($PROJECT_NUMBER), region: $REGION, service: $SERVICE"
+if [[ "$PROJECT_ID" == gen-lang-client-* ]]; then
+  warn "$PROJECT_ID looks like the project Google AI Studio created for your Gemini API key.
+         Billing must be on for the project that hosts Cloud Run, and turning billing on here also moves
+         that Gemini key to the paid tier (pay-as-you-go). To keep Gemini free, host the server in another project."
+fi
 
 BILLING="$(gcloud billing projects describe "$PROJECT_ID" --format='value(billingEnabled)' --quiet 2>/dev/null || true)"
 if [[ "$BILLING" == "False" ]]; then
@@ -74,11 +103,16 @@ if secret_exists "$API_KEY_SECRET" && [[ "${UPDATE_GEMINI_KEY:-}" != "1" ]]; the
   info "Using the Gemini API key already in Secret Manager ($API_KEY_SECRET). Set UPDATE_GEMINI_KEY=1 to replace it."
 else
   echo
-  echo "Paste your Gemini API key (create one at https://aistudio.google.com/apikey). Input is hidden:"
+  echo "Paste your Gemini API key (create one at https://aistudio.google.com/apikey; new keys start with \"AQ.\")."
+  echo "Nothing will appear while you paste. That's normal. Press Enter afterwards:"
   read -rs GEMINI_KEY
   echo
   GEMINI_KEY="$(printf '%s' "$GEMINI_KEY" | tr -d '[:space:]')"
   [[ -n "$GEMINI_KEY" ]] || die "No Gemini API key entered."
+  if ! looks_like_api_key "$GEMINI_KEY"; then
+    read -rp "That doesn't look like a Gemini API key (they start with \"AQ.\" or \"AIza\"). Use it anyway? [y/N] " answer
+    [[ "$answer" =~ ^[Yy] ]] || die "Re-run the script and paste the key from https://aistudio.google.com/apikey"
+  fi
   store_secret "$API_KEY_SECRET" "$GEMINI_KEY"
   unset GEMINI_KEY
   info "Stored the Gemini API key in Secret Manager ($API_KEY_SECRET)."

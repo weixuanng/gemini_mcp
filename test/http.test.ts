@@ -483,7 +483,7 @@ describe('HTTP server, paid tier', () => {
     );
     const result = await badClient.callTool({ name: 'gemini_ask', arguments: { message: 'hi' } });
     assert.equal(result.isError, true);
-    assert.match(textOf(result), /API key configured on this server is invalid/);
+    assert.match(textOf(result), /API key configured on this server was rejected/);
     await badClient.close();
     await badApp.close();
   });

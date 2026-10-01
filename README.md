@@ -61,18 +61,24 @@ Every tool accepts `depth` (`quick`, `standard`, or `deep`), `context`, and `thr
 Cloud Run hosts the server in Google's cloud, so it works from any device with nothing running on your computer. Personal use normally stays inside Cloud Run's free tier, but Google requires a billing account (a card) on the Cloud project.
 
 1. Open **[Google Cloud Shell](https://shell.cloud.google.com)**, a terminal in your browser with everything preinstalled. Use the same Google account.
-2. If you don't have a Google Cloud project yet, create one at [console.cloud.google.com/projectcreate](https://console.cloud.google.com/projectcreate). Then [link a billing account](https://console.cloud.google.com/billing/linkedaccount) to it.
+2. Decide which Google Cloud project hosts the server. It needs billing [linked](https://console.cloud.google.com/billing/linkedaccount):
+   - **The `gen-lang-client-…` project** that AI Studio created for your key is simplest. Turning billing on there also moves your Gemini key to the **paid** tier.
+   - **Another project** (or a [new one](https://console.cloud.google.com/projectcreate)) keeps the Gemini key on the **free** tier, because billing only goes on the hosting project.
 3. Paste this into Cloud Shell:
 
    ```bash
    git clone https://github.com/weixuanng/gemini_mcp.git
    cd gemini_mcp
    git checkout claude/mcp-gemini-integration-cww1kx   # skip this line once the branch is merged into main
-   gcloud config set project YOUR_PROJECT_ID
    ./deploy/cloudrun.sh
    ```
 
-4. When asked, paste your Gemini API key and say whether billing is enabled on it.
+4. The script asks three things:
+   - **Which project:** type its number from the list. Don't paste your API key here.
+   - **Your Gemini API key:** paste it when asked. New keys start with `AQ.`. Nothing appears while you paste; that's normal. Press Enter afterwards.
+   - **Paid tier?:** answer `y` if billing is on for the key's project, otherwise `N`.
+
+   If you already cloned the repo, run `git pull` first to get the latest script.
 
 After 3–5 minutes the script prints two things:
 
