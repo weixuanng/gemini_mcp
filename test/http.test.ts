@@ -563,6 +563,18 @@ describe('HTTP server, paid tier', () => {
     assert.equal(after.at(-1)!.body.model, 'gemini-2.5-flash');
   });
 
+  test('an overloaded model falls back to another Flash model', async () => {
+    mock.options.freeTier = false;
+    mock.options.overloadedModels = ['gemini-3.8-flash'];
+    const before = mock.requests.length;
+    const result = await client.callTool({ name: 'gemini_ask', arguments: { message: 'Second opinion please.' } });
+    mock.options.overloadedModels = undefined;
+    assert.ok(!result.isError, textOf(result));
+    assert.match(textOf(result), /gemini-3\.8-flash was overloaded at Google, so this ran on gemini-3\.7-flash/);
+    const models = mock.requests.slice(before).filter((r) => r.method === 'POST').map((r) => r.body.model);
+    assert.deepEqual(models, ['gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-3.7-flash']);
+  });
+
   test('an invalid Gemini API key produces a clear error', async () => {
     const badApp = await startApp({ GEMINI_API_BASE_URL: mock.url, GEMINI_API_KEY: 'wrong', AUTH_MODE: 'bearer' });
     const badClient = new Client({ name: 'bad', version: '1.0.0' });

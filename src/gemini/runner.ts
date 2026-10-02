@@ -90,6 +90,7 @@ export class GeminiRunner {
     let usedModelFallback = false;
     let usedSearchFallback = false;
     let usedNoSearchFallback = false;
+    const overloadFallbacks = this.cfg.fallbackModels.filter((m) => m !== plan.model);
 
     // Each fallback is used at most once: thinking level, deep model, free-tier search model, no search.
     for (;;) {
@@ -110,6 +111,15 @@ export class GeminiRunner {
         if (!thinkingDisabled && plan.thinkingLevel && err.httpStatus === 400 && /thinking/i.test(err.message)) {
           log.warn('Model rejected thinking_level; retrying without it', { model: plan.model });
           thinkingDisabled = true;
+          continue;
+        }
+
+        // Overloaded ("high demand") after the client's own retries: try another model of the same family.
+        if (err.isOverloaded && overloadFallbacks.length > 0 && plan.model !== this.cfg.freeSearchModel) {
+          const next = overloadFallbacks.shift()!;
+          log.warn('Model overloaded; trying a fallback model', { model: plan.model, fallback: next });
+          notes.push(`${plan.model} was overloaded at Google, so this ran on ${next}.`);
+          plan = this.withThinking(next, task.depth);
           continue;
         }
 

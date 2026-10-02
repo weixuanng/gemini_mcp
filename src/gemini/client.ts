@@ -56,6 +56,11 @@ export class GeminiApiError extends Error {
     return this.httpStatus === 400 && /no longer available|not found|does not exist|unknown model|is not available/i.test(this.message);
   }
 
+  /** Temporary capacity problem at Google ("high demand", "overloaded"). */
+  get isOverloaded(): boolean {
+    return this.httpStatus === 503 || (this.httpStatus === 500 && /overloaded|high demand/i.test(this.message));
+  }
+
   get isTransient(): boolean {
     if (this.httpStatus === 429) return !this.isQuotaZero;
     return [408, 500, 502, 503, 504].includes(this.httpStatus);

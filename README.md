@@ -138,6 +138,7 @@ Set these as Cloud Run environment variables (Cloud Console → Cloud Run → `g
 | `GEMINI_MODEL` | `gemini-3.8-flash` | Model for quick and standard work |
 | `GEMINI_DEEP_MODEL` | `gemini-3.1-pro-preview` (paid), else `GEMINI_MODEL` | Model for `depth: "deep"` |
 | `GEMINI_FREE_SEARCH_MODEL` | `gemini-2.5-flash` | Model tried for web search on the free tier (keys created before Gemini 2.5 closed to new users); if it's unavailable, search tools run without Google Search |
+| `GEMINI_FALLBACK_MODELS` | `gemini-3.7-flash,gemini-3.6-flash` | Tried in order when Google reports the main model is overloaded (HTTP 503) |
 | `GEMINI_USER_CONTEXT` | (empty) | Standing context about you, added to every Gemini request |
 | `GEMINI_STORE` | `true` | Store interactions so `thread_id` follow-ups work |
 | `GEMINI_TIMEOUT_MS` | `200000` | Time budget per call. Claude's apps cut tool calls off at 240 s |

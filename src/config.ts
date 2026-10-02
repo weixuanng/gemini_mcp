@@ -17,6 +17,8 @@ export interface GeminiConfig {
   timeoutMs: number;
   /** Optional standing context about the user, added to every Gemini system instruction. */
   userContext?: string;
+  /** Models tried in order when the chosen model is overloaded (HTTP 503) or briefly unavailable. */
+  fallbackModels: string[];
   deepResearch: {
     enabled: boolean;
     agent: string;
@@ -86,6 +88,9 @@ export function loadConfig(env: Env, transport: TransportKind): AppConfig {
     store: bool(env.GEMINI_STORE, true, 'GEMINI_STORE', problems),
     timeoutMs: int(env.GEMINI_TIMEOUT_MS, 200_000, 'GEMINI_TIMEOUT_MS', problems, 5_000, 3_600_000),
     userContext: str(env.GEMINI_USER_CONTEXT),
+    fallbackModels: env.GEMINI_FALLBACK_MODELS !== undefined
+      ? list(env.GEMINI_FALLBACK_MODELS)
+      : ['gemini-3.7-flash', 'gemini-3.6-flash'],
     deepResearch: {
       enabled: bool(env.ENABLE_DEEP_RESEARCH, false, 'ENABLE_DEEP_RESEARCH', problems),
       agent: str(env.DEEP_RESEARCH_AGENT) ?? 'deep-research-preview-04-2026',
