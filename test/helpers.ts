@@ -32,6 +32,8 @@ export interface MockOptions {
   newUser?: boolean;
   /** Models that always answer 503 "high demand". */
   overloadedModels?: string[];
+  /** Models that answer 429 "Your project has exceeded a quota." */
+  rateLimitedModels?: string[];
 }
 
 export interface RecordedRequest {
@@ -106,6 +108,10 @@ export async function startMockGemini(options: MockOptions = {}): Promise<MockGe
       }
       if (body.previous_interaction_id === 'expired-thread') {
         apiError(res, 404, 'NOT_FOUND', 'Interaction expired-thread not found.');
+        return;
+      }
+      if (options.rateLimitedModels?.includes(body.model)) {
+        apiError(res, 429, 'RESOURCE_EXHAUSTED', 'Your project has exceeded a quota. See https://ai.dev/rate-limit to manage your rate limits.');
         return;
       }
       if (options.overloadedModels?.includes(body.model)) {

@@ -115,10 +115,26 @@ export class GeminiRunner {
         }
 
         // Overloaded ("high demand") after the client's own retries: try another model of the same family.
-        if (err.isOverloaded && overloadFallbacks.length > 0 && plan.model !== this.cfg.freeSearchModel) {
+        // Free-tier search model out of quota (or closed to this key): answer without search instead of failing.
+        if (!usedNoSearchFallback && search && plan.model === this.cfg.freeSearchModel && err.httpStatus === 429) {
+          usedNoSearchFallback = true;
+          this.searchUnavailable = true;
+          log.warn('Free-tier search model refused (quota); continuing without Google Search', { error: err.message });
+          search = false;
+          for (let i = notes.length - 1; i >= 0; i--) {
+            if (notes[i]!.includes(this.cfg.freeSearchModel)) notes.splice(i, 1);
+          }
+          notes.push(NO_SEARCH_NOTE);
+          plan = this.withThinking(task.depth === 'deep' ? this.cfg.deepModel : this.cfg.model, task.depth);
+          continue;
+        }
+
+        // Overloaded or rate-limited model: free-tier limits are per model, so another Flash model usually works.
+        const busy = err.isOverloaded || (err.httpStatus === 429 && !err.isQuotaZero);
+        if (busy && overloadFallbacks.length > 0 && plan.model !== this.cfg.freeSearchModel) {
           const next = overloadFallbacks.shift()!;
           log.warn('Model overloaded; trying a fallback model', { model: plan.model, fallback: next });
-          notes.push(`${plan.model} was overloaded at Google, so this ran on ${next}.`);
+          notes.push(`${plan.model} was ${err.isOverloaded ? 'overloaded at Google' : 'over its rate limit'}, so this ran on ${next}.`);
           plan = this.withThinking(next, task.depth);
           continue;
         }

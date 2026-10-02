@@ -478,6 +478,35 @@ describe('HTTP server, free tier, new user (no search-capable model)', () => {
   });
 });
 
+describe('HTTP server, free tier, search model over quota', () => {
+  test('search tools answer without Google Search instead of failing', async () => {
+    const mock = await startMockGemini({ rateLimitedModels: ['gemini-2.5-flash'] });
+    const app = await startApp({ GEMINI_API_BASE_URL: mock.url, AUTH_MODE: 'bearer' });
+    const client = new Client({ name: 'quota', version: '1.0.0' });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${app.baseUrl}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${ACCESS_KEY}` } },
+      }),
+    );
+    try {
+      const result = await client.callTool({
+        name: 'gemini_second_opinion',
+        arguments: { task: 'How long should a marathon taper be?', work: 'Two to three weeks, cutting mileage 40-60%.' },
+      });
+      assert.ok(!result.isError, textOf(result));
+      assert.match(textOf(result), /Google Search isn't available with this API key/);
+      assert.deepEqual(
+        mock.requests.filter((r) => r.method === 'POST').map((r) => r.body.model),
+        ['gemini-2.5-flash', 'gemini-2.5-flash', 'gemini-2.5-flash', 'gemini-3.8-flash'],
+      );
+    } finally {
+      await client.close();
+      await app.close();
+      await mock.close();
+    }
+  });
+});
+
 describe('HTTP server, paid tier', () => {
   let mock: MockGemini;
   let app: RunningApp;
@@ -573,6 +602,17 @@ describe('HTTP server, paid tier', () => {
     assert.match(textOf(result), /gemini-3\.8-flash was overloaded at Google, so this ran on gemini-3\.7-flash/);
     const models = mock.requests.slice(before).filter((r) => r.method === 'POST').map((r) => r.body.model);
     assert.deepEqual(models, ['gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-3.7-flash']);
+  });
+
+  test('a rate-limited model falls back to another Flash model', async () => {
+    mock.options.rateLimitedModels = ['gemini-3.8-flash'];
+    const before = mock.requests.length;
+    const result = await client.callTool({ name: 'gemini_ask', arguments: { message: 'Second opinion please.' } });
+    mock.options.rateLimitedModels = undefined;
+    assert.ok(!result.isError, textOf(result));
+    assert.match(textOf(result), /gemini-3\.8-flash was over its rate limit, so this ran on gemini-3\.7-flash/);
+    const models = mock.requests.slice(before).filter((r) => r.method === 'POST').map((r) => r.body.model);
+    assert.equal(models.at(-1), 'gemini-3.7-flash');
   });
 
   test('an invalid Gemini API key produces a clear error', async () => {
