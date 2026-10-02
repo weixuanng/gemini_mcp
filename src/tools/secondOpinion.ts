@@ -54,11 +54,12 @@ export function registerSecondOpinion(server: McpServer, deps: ToolDeps): void {
         toolName: 'gemini_second_opinion',
         heading: 'Gemini review',
         spec: {
-          systemInstruction: systemInstruction('review', {
-            userContext: deps.cfg.gemini.userContext,
-            search: use_web_search,
-            urls: false,
-          }),
+          instruction: ({ search }) =>
+            systemInstruction('review', {
+              userContext: deps.cfg.gemini.userContext,
+              search,
+              urls: false,
+            }),
           input,
           depth,
           search: use_web_search,

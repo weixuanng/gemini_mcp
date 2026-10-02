@@ -73,11 +73,12 @@ export function registerVerifyClaims(server: McpServer, deps: ToolDeps): void {
         toolName: 'gemini_verify_claims',
         heading: `Gemini fact-check (${claims.length} claim${claims.length === 1 ? '' : 's'})`,
         spec: {
-          systemInstruction: systemInstruction('verify', {
-            userContext: deps.cfg.gemini.userContext,
-            search: true,
-            urls: sources.length > 0,
-          }),
+          instruction: ({ search }) =>
+            systemInstruction('verify', {
+              userContext: deps.cfg.gemini.userContext,
+              search,
+              urls: sources.length > 0,
+            }),
           input: buildInput(text, urls.youtube),
           depth,
           search: true,

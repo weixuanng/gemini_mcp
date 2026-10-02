@@ -60,11 +60,12 @@ export function registerAsk(server: McpServer, deps: ToolDeps): void {
         toolName: 'gemini_ask',
         heading: 'Gemini',
         spec: {
-          systemInstruction: systemInstruction('ask', {
-            userContext: deps.cfg.gemini.userContext,
-            search: use_web_search,
-            urls: split.web.length + split.youtube.length > 0,
-          }),
+          instruction: ({ search }) =>
+            systemInstruction('ask', {
+              userContext: deps.cfg.gemini.userContext,
+              search,
+              urls: split.web.length + split.youtube.length > 0,
+            }),
           input: buildInput(text, split.youtube),
           depth,
           search: use_web_search,

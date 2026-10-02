@@ -388,6 +388,96 @@ describe('HTTP server, free tier, OAuth', () => {
   });
 });
 
+describe('HTTP server, free tier, new user (no search-capable model)', () => {
+  let mock: MockGemini;
+  let app: RunningApp;
+  let client: Client;
+
+  before(async () => {
+    mock = await startMockGemini({ freeTier: true, newUser: true });
+    app = await startApp({ GEMINI_API_BASE_URL: mock.url, AUTH_MODE: 'bearer' });
+    client = new Client({ name: 'new-user-client', version: '1.0.0' });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${app.baseUrl}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${ACCESS_KEY}` } },
+      }),
+    );
+  });
+
+  after(async () => {
+    await client?.close();
+    await app?.close();
+    await mock?.close();
+  });
+
+  test('search tools fall back to model knowledge plus URL reading instead of failing', async () => {
+    const result = await client.callTool({
+      name: 'gemini_verify_claims',
+      arguments: { claims: ['The Eiffel Tower is 330 m tall.'], cited_sources: ['https://www.toureiffel.paris/en'] },
+    });
+    assert.ok(!result.isError, textOf(result));
+    const text = textOf(result);
+    assert.match(text, /Model: gemini-3\.8-flash · Tools: URL reading/);
+    assert.match(text, /Google Search isn't available with this API key/);
+    assert.ok(!text.includes('Free API tier: Google Search ran on'), 'stale search note must be dropped');
+
+    const creates = mock.requests.filter((r) => r.method === 'POST' && r.path === '/v1beta/interactions');
+    assert.deepEqual(
+      creates.map((r) => r.body.model),
+      ['gemini-2.5-flash', 'gemini-3.8-flash'],
+    );
+    const last = creates.at(-1)!.body;
+    assert.deepEqual(last.tools, [{ type: 'url_context' }]);
+    assert.match(last.system_instruction, /you have no web search for this request/);
+    assert.doesNotMatch(last.system_instruction, /Search for evidence with targeted queries/);
+  });
+
+  test('remembers that search is unavailable, so later calls make a single request', async () => {
+    const before = mock.requests.length;
+    const result = await client.callTool({ name: 'gemini_web_search', arguments: { query: 'How tall is the Eiffel Tower?' } });
+    assert.ok(!result.isError, textOf(result));
+    assert.match(textOf(result), /Google Search isn't available with this API key/);
+    const newCreates = mock.requests.slice(before).filter((r) => r.method === 'POST' && r.path === '/v1beta/interactions');
+    assert.equal(newCreates.length, 1);
+    assert.equal(newCreates[0]!.body.model, 'gemini-3.8-flash');
+    assert.deepEqual(newCreates[0]!.body.tools, [{ type: 'url_context' }]);
+    assert.match(newCreates[0]!.body.system_instruction, /You have no web access for this request/);
+
+    const info = client.getInstructions() ?? '';
+    assert.match(info, /web search uses gemini-2\.5-flash/, 'instructions were fetched before the fallback was learned');
+  });
+
+  test('a retired model error is not mistaken for an expired thread', async () => {
+    // Fresh server: it hasn't learned yet that search is unavailable, so the first request hits the 404.
+    const freshApp = await startApp({ GEMINI_API_BASE_URL: mock.url, AUTH_MODE: 'bearer' });
+    const fresh = new Client({ name: 'fresh', version: '1.0.0' });
+    await fresh.connect(
+      new StreamableHTTPClientTransport(new URL(`${freshApp.baseUrl}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${ACCESS_KEY}` } },
+      }),
+    );
+    try {
+      const before = mock.requests.length;
+      const result = await fresh.callTool({
+        name: 'gemini_verify_claims',
+        arguments: { claims: ['The Eiffel Tower is 330 m tall.'], thread_id: 'v1_some_thread' },
+      });
+      assert.ok(!result.isError, textOf(result));
+      const creates = mock.requests.slice(before).filter((r) => r.method === 'POST' && r.path === '/v1beta/interactions');
+      assert.deepEqual(
+        creates.map((r) => [r.body.model, r.body.previous_interaction_id]),
+        [
+          ['gemini-2.5-flash', 'v1_some_thread'],
+          ['gemini-3.8-flash', 'v1_some_thread'],
+        ],
+      );
+    } finally {
+      await fresh.close();
+      await freshApp.close();
+    }
+  });
+});
+
 describe('HTTP server, paid tier', () => {
   let mock: MockGemini;
   let app: RunningApp;

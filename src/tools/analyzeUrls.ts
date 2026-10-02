@@ -73,11 +73,12 @@ export function registerAnalyzeUrls(server: McpServer, deps: ToolDeps): void {
         toolName: 'gemini_analyze_urls',
         heading: `Gemini source analysis (${split.web.length + split.youtube.length} source${split.web.length + split.youtube.length === 1 ? '' : 's'})`,
         spec: {
-          systemInstruction: systemInstruction('urls', {
-            userContext: deps.cfg.gemini.userContext,
-            search: allow_web_search,
-            urls: true,
-          }),
+          instruction: ({ search }) =>
+            systemInstruction('urls', {
+              userContext: deps.cfg.gemini.userContext,
+              search,
+              urls: true,
+            }),
           input: buildInput(text, split.youtube),
           depth,
           search: allow_web_search,

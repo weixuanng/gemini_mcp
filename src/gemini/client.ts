@@ -49,6 +49,13 @@ export class GeminiApiError extends Error {
     );
   }
 
+  /** The model itself can't be used with this key: retired, closed to new users, or unknown. */
+  get isModelUnavailable(): boolean {
+    if (!/\bmodels?\b/i.test(this.message)) return false;
+    if (this.httpStatus === 404) return true;
+    return this.httpStatus === 400 && /no longer available|not found|does not exist|unknown model|is not available/i.test(this.message);
+  }
+
   get isTransient(): boolean {
     if (this.httpStatus === 429) return !this.isQuotaZero;
     return [408, 500, 502, 503, 504].includes(this.httpStatus);

@@ -25,13 +25,15 @@ Your **Google AI Plus** ("Gemini Plus") subscription covers the Gemini *app*. It
 | | Free API tier (no billing) | Paid API tier (billing enabled on the key) |
 |---|---|---|
 | Cost | $0 | Pay per use. A typical check costs about $0.01–0.03 (see [Costs](#costs)) |
-| Web search (Google Search grounding) | **Gemini 2.5 Flash only.** Gemini 3.x models can't use search on the free tier | Newest models: Gemini 3.8 Flash, and Gemini 3.1 Pro for `depth: "deep"` |
+| Web search (Google Search grounding) | **Not available for new keys.** Gemini 3.x can't search on the free tier, and Gemini 2.5 (the free-tier search model) no longer accepts new users. Search tools then answer from Gemini's own knowledge plus any URLs given | Newest models: Gemini 3.8 Flash, and Gemini 3.1 Pro for `depth: "deep"`. 5,000 searches/month free |
 | Reading URLs, PDFs, YouTube; reasoning without search | Gemini 3.8 Flash | Gemini 3.8 Flash and 3.1 Pro |
 | Privacy | Google may use prompts and answers to improve its products, and human reviewers may read them | Not used to improve Google's products |
 | Rate limits | Low daily limits | Much higher |
 | Thread memory (`thread_id`) | Kept for 1 day | Kept for 55 days by default |
 
-The server works with either tier. Set `GEMINI_TIER` to match your key. If you set `paid` but the key turns out to be free tier, the server notices and falls back automatically. Don't send sensitive personal data through a free-tier key.
+The server works with either tier. Set `GEMINI_TIER` to match your key. If you set `paid` but the key turns out to be free tier, the server notices and falls back automatically, and each answer says when Google Search wasn't available. Don't send sensitive personal data through a free-tier key.
+
+**Independent web search needs the paid tier** if your key is new. On the free tier Gemini can still read the pages, PDFs and videos Claude gives it, check them against the claims, and give its own view. To switch, open [AI Studio → API keys](https://aistudio.google.com/apikey), click **Set up billing** next to your key, then run `GEMINI_TIER=paid ./deploy/cloudrun.sh`.
 
 > If your plan is actually **Google AI Pro** or **Ultra**, it includes monthly Google Cloud credits through the Google Developer Program ($10/month on Pro). These can pay for the paid API tier and for Cloud Run.
 
@@ -135,7 +137,7 @@ Set these as Cloud Run environment variables (Cloud Console → Cloud Run → `g
 | `GEMINI_TIER` | `free` | `free` or `paid` (see the table above) |
 | `GEMINI_MODEL` | `gemini-3.8-flash` | Model for quick and standard work |
 | `GEMINI_DEEP_MODEL` | `gemini-3.1-pro-preview` (paid), else `GEMINI_MODEL` | Model for `depth: "deep"` |
-| `GEMINI_FREE_SEARCH_MODEL` | `gemini-2.5-flash` | Model used for web search on the free tier |
+| `GEMINI_FREE_SEARCH_MODEL` | `gemini-2.5-flash` | Model tried for web search on the free tier (keys created before Gemini 2.5 closed to new users); if it's unavailable, search tools run without Google Search |
 | `GEMINI_USER_CONTEXT` | (empty) | Standing context about you, added to every Gemini request |
 | `GEMINI_STORE` | `true` | Store interactions so `thread_id` follow-ups work |
 | `GEMINI_TIMEOUT_MS` | `200000` | Time budget per call. Claude's apps cut tool calls off at 240 s |

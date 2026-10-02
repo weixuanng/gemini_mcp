@@ -39,11 +39,12 @@ export function registerWebSearch(server: McpServer, deps: ToolDeps): void {
         toolName: 'gemini_web_search',
         heading: 'Gemini research',
         spec: {
-          systemInstruction: systemInstruction('search', {
-            userContext: deps.cfg.gemini.userContext,
-            search: true,
-            urls: false,
-          }),
+          instruction: ({ search }) =>
+            systemInstruction('search', {
+              userContext: deps.cfg.gemini.userContext,
+              search,
+              urls: false,
+            }),
           input,
           depth,
           search: true,

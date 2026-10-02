@@ -158,6 +158,9 @@ test('GeminiApiError: quota-zero vs ordinary rate limits', () => {
   assert.ok(!rate.looksLikeTierRestriction && rate.isTransient);
   assert.ok(new GeminiApiError('Grounding is not available on the free tier.', 400).looksLikeTierRestriction);
   assert.ok(new GeminiApiError('overloaded', 503).isTransient);
+  const retired = new GeminiApiError('This model models/gemini-2.5-flash is no longer available to new users.', 404);
+  assert.ok(retired.isModelUnavailable && !retired.isTransient);
+  assert.ok(!new GeminiApiError('Interaction v1_abc not found.', 404).isModelUnavailable);
   assert.ok(!new GeminiApiError('bad', 400).isTransient);
 });
 

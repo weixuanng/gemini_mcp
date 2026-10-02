@@ -6,7 +6,8 @@ import { log } from '../util/log.js';
 export type Depth = 'quick' | 'standard' | 'deep';
 
 export interface TaskSpec {
-  systemInstruction: string;
+  /** Builds the system instruction for the tools actually available (search may be unavailable on free keys). */
+  instruction: (caps: { search: boolean }) => string;
   input: string | InputContent[];
   depth: Depth;
   search: boolean;
@@ -29,13 +30,20 @@ interface Plan {
 
 const THINKING_BY_DEPTH: Record<Depth, ThinkingLevel> = { quick: 'low', standard: 'medium', deep: 'high' };
 
+const NO_SEARCH_NOTE =
+  "Google Search isn't available with this API key: on the free tier, Gemini 3.x can't use search and Gemini 2.5 " +
+  "is closed to new users. Gemini answered from its own knowledge and any URLs given, so treat recent facts with caution. " +
+  'Enable billing for the key in Google AI Studio (then set GEMINI_TIER=paid) to turn on live search.';
+
 export class ThreadUnavailableError extends Error {
   override name = 'ThreadUnavailableError';
 }
 
-/** Picks models for the configured tier and recovers from tier restrictions by falling back once. */
+/** Picks models for the configured tier and recovers from tier restrictions by falling back once per kind. */
 export class GeminiRunner {
   private detectedFreeTier = false;
+  /** Set once no search-capable model works with this key (free tier, new users). */
+  private searchUnavailable = false;
 
   constructor(
     readonly client: GeminiClient,
@@ -51,8 +59,14 @@ export class GeminiRunner {
     return this.effectiveTier === 'paid' ? '55 days by default on the paid tier' : '1 day on the free tier';
   }
 
+  /** Human-readable description of how web search is currently handled. */
+  get searchStatus(): string {
+    if (this.searchUnavailable) return 'unavailable with this API key (free tier), so search tools fall back to model knowledge plus URL reading';
+    return `uses ${this.plan({ depth: 'standard', search: true }).model}`;
+  }
+
   plan(task: Pick<TaskSpec, 'depth' | 'search'>): Plan {
-    if (task.search && this.effectiveTier === 'free') {
+    if (task.search && !this.searchUnavailable && this.effectiveTier === 'free') {
       return this.withThinking(this.cfg.freeSearchModel, task.depth);
     }
     return this.withThinking(task.depth === 'deep' ? this.cfg.deepModel : this.cfg.model, task.depth);
@@ -66,20 +80,23 @@ export class GeminiRunner {
     }
 
     const notes: string[] = [];
-    let plan = this.plan(task);
-    if (task.search && plan.model === this.cfg.freeSearchModel && this.effectiveTier === 'free') {
+    let search = task.search && !this.searchUnavailable;
+    if (task.search && !search) notes.push(NO_SEARCH_NOTE);
+    let plan = this.plan({ depth: task.depth, search });
+    if (search && plan.model === this.cfg.freeSearchModel && this.effectiveTier === 'free') {
       notes.push(freeSearchNote(this.cfg.freeSearchModel));
     }
     let thinkingDisabled = false;
     let usedModelFallback = false;
     let usedSearchFallback = false;
+    let usedNoSearchFallback = false;
 
-    // At most: one thinking retry, one deep-model fallback, one free-tier search fallback.
+    // Each fallback is used at most once: thinking level, deep model, free-tier search model, no search.
     for (;;) {
-      const body = this.buildBody(task, plan, thinkingDisabled);
+      const body = this.buildBody(task, plan, search, thinkingDisabled);
       try {
         const interaction = await this.client.createInteraction(body, opts);
-        return { interaction, model: plan.model, notes, toolsLabel: toolsLabel(task) };
+        return { interaction, model: plan.model, notes, toolsLabel: toolsLabel({ ...task, search }) };
       } catch (err) {
         if (!(err instanceof GeminiApiError)) throw err;
 
@@ -96,7 +113,7 @@ export class GeminiRunner {
           continue;
         }
 
-        if (!err.looksLikeTierRestriction) throw err;
+        if (!err.looksLikeTierRestriction && !err.isModelUnavailable) throw err;
 
         // The deep model (e.g. a Pro preview) may simply not be available to this key: try the standard model first.
         if (!usedModelFallback && plan.model === this.cfg.deepModel && this.cfg.deepModel !== this.cfg.model) {
@@ -106,7 +123,8 @@ export class GeminiRunner {
           continue;
         }
 
-        if (!usedSearchFallback && task.search && plan.model !== this.cfg.freeSearchModel) {
+        // Search refused for a 3.x model: the key is probably free tier, where only the older model may search.
+        if (!usedSearchFallback && search && plan.model !== this.cfg.freeSearchModel && err.looksLikeTierRestriction) {
           usedSearchFallback = true;
           if (!this.detectedFreeTier && this.cfg.tier === 'paid') {
             log.warn('Search grounding refused for the configured model; treating API key as free tier', {
@@ -123,6 +141,23 @@ export class GeminiRunner {
           continue;
         }
 
+        // No search-capable model works with this key: answer without Google Search rather than failing.
+        if (!usedNoSearchFallback && search) {
+          usedNoSearchFallback = true;
+          this.searchUnavailable = true;
+          log.warn('No search-capable model available for this key; continuing without Google Search', {
+            model: plan.model,
+            error: err.message,
+          });
+          search = false;
+          for (let i = notes.length - 1; i >= 0; i--) {
+            if (notes[i]!.includes(this.cfg.freeSearchModel)) notes.splice(i, 1);
+          }
+          notes.push(NO_SEARCH_NOTE);
+          plan = this.withThinking(task.depth === 'deep' ? this.cfg.deepModel : this.cfg.model, task.depth);
+          continue;
+        }
+
         throw err;
       }
     }
@@ -132,16 +167,16 @@ export class GeminiRunner {
     return supportsThinkingLevel(model) ? { model, thinkingLevel: THINKING_BY_DEPTH[depth] } : { model };
   }
 
-  private buildBody(task: TaskSpec, plan: Plan, thinkingDisabled: boolean): CreateInteractionBody {
+  private buildBody(task: TaskSpec, plan: Plan, search: boolean, thinkingDisabled: boolean): CreateInteractionBody {
     const tools: ToolSpec[] = [];
-    if (task.search) tools.push({ type: 'google_search' });
+    if (search) tools.push({ type: 'google_search' });
     if (task.urlContext) tools.push({ type: 'url_context' });
     if (task.codeExecution) tools.push({ type: 'code_execution' });
 
     const body: CreateInteractionBody = {
       model: plan.model,
       input: task.input,
-      system_instruction: task.systemInstruction,
+      system_instruction: task.instruction({ search }),
       store: this.cfg.store,
     };
     if (tools.length > 0) body.tools = tools;
@@ -168,6 +203,7 @@ function toolsLabel(task: Pick<TaskSpec, 'search' | 'urlContext' | 'codeExecutio
 }
 
 function looksLikeMissingThread(err: GeminiApiError): boolean {
+  if (err.isModelUnavailable) return false;
   if (err.httpStatus === 404) return true;
   return err.httpStatus === 400 && /previous_interaction|interaction.{0,40}(not found|does not exist|expired)/i.test(err.message);
 }

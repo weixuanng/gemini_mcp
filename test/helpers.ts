@@ -28,6 +28,8 @@ export interface MockOptions {
   transientFailures?: number;
   /** Models this key has no quota for (e.g. a Pro preview on a new paid project). */
   unavailableModels?: string[];
+  /** Behave like a key created after Gemini 2.5 was closed to new users (HTTP 404 for gemini-2.5-*). */
+  newUser?: boolean;
 }
 
 export interface RecordedRequest {
@@ -102,6 +104,15 @@ export async function startMockGemini(options: MockOptions = {}): Promise<MockGe
       }
       if (body.previous_interaction_id === 'expired-thread') {
         apiError(res, 404, 'NOT_FOUND', 'Interaction expired-thread not found.');
+        return;
+      }
+      if (options.newUser && String(body.model).startsWith('gemini-2.5')) {
+        apiError(
+          res,
+          404,
+          'NOT_FOUND',
+          `This model models/${body.model} is no longer available to new users. Please update your code to use models/gemini-3.8-flash for the latest features and improvements.`,
+        );
         return;
       }
       if (options.unavailableModels?.includes(body.model)) {

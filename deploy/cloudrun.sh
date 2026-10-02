@@ -132,8 +132,9 @@ TIER="${GEMINI_TIER:-}"
 if [[ -z "$TIER" ]]; then
   echo
   echo "Is billing enabled for your Gemini API key in Google AI Studio (the paid tier)?"
-  echo "  Free tier: \$0, but Google may use your prompts to improve its products, and web search"
-  echo "             runs on the older gemini-2.5-flash. Paid tier: newest models with search, private."
+  echo "  Free tier: \$0, but Google may use your prompts to improve its products, and new keys get no"
+  echo "             Google Search (Gemini still reads the URLs Claude gives it)."
+  echo "  Paid tier: newest models with live Google Search; prompts not used by Google; about a cent per check."
   read -rp "Paid tier? [y/N] " answer
   if [[ "$answer" =~ ^[Yy] ]]; then TIER="paid"; else TIER="free"; fi
 fi
