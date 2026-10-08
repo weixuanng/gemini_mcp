@@ -86,7 +86,7 @@ export function loadConfig(env: Env, transport: TransportKind): AppConfig {
     deepModel,
     freeSearchModel: str(env.GEMINI_FREE_SEARCH_MODEL) ?? 'gemini-2.5-flash',
     store: bool(env.GEMINI_STORE, true, 'GEMINI_STORE', problems),
-    timeoutMs: int(env.GEMINI_TIMEOUT_MS, 200_000, 'GEMINI_TIMEOUT_MS', problems, 5_000, 3_600_000),
+    timeoutMs: int(env.GEMINI_TIMEOUT_MS, 45_000, 'GEMINI_TIMEOUT_MS', problems, 5_000, 3_600_000),
     userContext: str(env.GEMINI_USER_CONTEXT),
     fallbackModels: env.GEMINI_FALLBACK_MODELS !== undefined
       ? list(env.GEMINI_FALLBACK_MODELS)

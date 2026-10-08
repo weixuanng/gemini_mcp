@@ -497,7 +497,7 @@ describe('HTTP server, free tier, search model over quota', () => {
       assert.match(textOf(result), /Google Search isn't available with this API key/);
       assert.deepEqual(
         mock.requests.filter((r) => r.method === 'POST').map((r) => r.body.model),
-        ['gemini-2.5-flash', 'gemini-2.5-flash', 'gemini-2.5-flash', 'gemini-3.8-flash'],
+        ['gemini-2.5-flash', 'gemini-3.8-flash'],
       );
     } finally {
       await client.close();
@@ -612,7 +612,7 @@ describe('HTTP server, paid tier', () => {
     assert.ok(!result.isError, textOf(result));
     assert.match(textOf(result), /gemini-3\.8-flash was over its rate limit, so this ran on gemini-3\.7-flash/);
     const models = mock.requests.slice(before).filter((r) => r.method === 'POST').map((r) => r.body.model);
-    assert.equal(models.at(-1), 'gemini-3.7-flash');
+    assert.deepEqual(models, ['gemini-3.8-flash', 'gemini-3.7-flash'], 'no waiting on the rate-limited model');
   });
 
   test('an invalid Gemini API key produces a clear error', async () => {

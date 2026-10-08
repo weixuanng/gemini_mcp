@@ -141,7 +141,7 @@ Set these as Cloud Run environment variables (Cloud Console → Cloud Run → `g
 | `GEMINI_FALLBACK_MODELS` | `gemini-3.7-flash,gemini-3.6-flash` | Tried in order when Google reports the main model is overloaded (HTTP 503) |
 | `GEMINI_USER_CONTEXT` | (empty) | Standing context about you, added to every Gemini request |
 | `GEMINI_STORE` | `true` | Store interactions so `thread_id` follow-ups work |
-| `GEMINI_TIMEOUT_MS` | `200000` | Time budget per call. Claude's apps cut tool calls off at 240 s |
+| `GEMINI_TIMEOUT_MS` | `45000` | Time budget per call, including retries and model fallbacks. Claude Code gives up after 60 s (claude.ai after 240 s), so keep it under the shortest one you use; raise it for long `deep` checks |
 | `ENABLE_DEEP_RESEARCH` | `false` | Adds the paid Deep Research tools |
 | `DAILY_CALL_LIMIT` | `300` | Max Gemini calls per day per instance (`0` = unlimited) |
 | `MAX_OUTPUT_CHARS` | `60000` | Truncate longer results (Claude Code's default limit is about 25k tokens) |

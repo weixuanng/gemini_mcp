@@ -17,7 +17,8 @@ export interface RequestOptions {
 }
 
 const MAX_ATTEMPTS = 3;
-const MAX_SERVER_RETRY_DELAY_MS = 20_000;
+/** Longer server-requested waits fail fast; the runner then tries another model instead. */
+const MAX_SERVER_RETRY_DELAY_MS = 4_000;
 
 export class GeminiApiError extends Error {
   override name = 'GeminiApiError';
@@ -128,12 +129,14 @@ export class GeminiClient {
           throw new GeminiTimeoutError('Gemini did not respond in time.');
         }
         lastError = err;
-        const retryable = err instanceof GeminiApiError ? err.isTransient : isNetworkError(err);
+        // Rate limits (429) aren't retried here: free-tier limits are per model, so the runner switches models.
+        const retryable =
+          err instanceof GeminiApiError ? err.isTransient && err.httpStatus !== 429 : isNetworkError(err);
         if (!retryable || attempt === MAX_ATTEMPTS) throw err;
 
         const serverDelay = err instanceof GeminiApiError ? err.retryAfterMs : undefined;
         if (serverDelay !== undefined && serverDelay > MAX_SERVER_RETRY_DELAY_MS) throw err;
-        const delay = serverDelay ?? (attempt === 1 ? 1_000 : 3_000);
+        const delay = serverDelay ?? (attempt === 1 ? 1_000 : 2_000);
         if (Date.now() + delay >= opts.deadline) throw err;
 
         log.warn('Retrying Gemini request', {
