@@ -34,6 +34,8 @@ export interface MockOptions {
   overloadedModels?: string[];
   /** Models that answer 429 "Your project has exceeded a quota." */
   rateLimitedModels?: string[];
+  /** Models whose requests never get an answer (hang). */
+  hangingModels?: string[];
 }
 
 export interface RecordedRequest {
@@ -109,6 +111,10 @@ export async function startMockGemini(options: MockOptions = {}): Promise<MockGe
       if (body.previous_interaction_id === 'expired-thread') {
         apiError(res, 404, 'NOT_FOUND', 'Interaction expired-thread not found.');
         return;
+      }
+      if (options.hangingModels?.includes(body.model)) {
+        req.socket.setTimeout(0);
+        return; // never respond
       }
       if (options.rateLimitedModels?.includes(body.model)) {
         apiError(res, 429, 'RESOURCE_EXHAUSTED', 'Your project has exceeded a quota. See https://ai.dev/rate-limit to manage your rate limits.');
@@ -247,7 +253,11 @@ export async function startMockGemini(options: MockOptions = {}): Promise<MockGe
     requests,
     options,
     lastCreate: () => [...requests].reverse().find((r) => r.method === 'POST' && r.path === '/v1beta/interactions')?.body,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      }),
   };
 }
 

@@ -507,6 +507,31 @@ describe('HTTP server, free tier, search model over quota', () => {
   });
 });
 
+describe('HTTP server, hanging model', () => {
+  test('a model that never answers is abandoned for a backup model in time', async () => {
+    const mock = await startMockGemini({ hangingModels: ['gemini-3.8-flash'] });
+    const app = await startApp({ GEMINI_API_BASE_URL: mock.url, AUTH_MODE: 'bearer' });
+    const client = new Client({ name: 'hang', version: '1.0.0' });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${app.baseUrl}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${ACCESS_KEY}` } },
+      }),
+    );
+    try {
+      const started = Date.now();
+      const result = await client.callTool({ name: 'gemini_ask', arguments: { message: 'OK?' } });
+      const elapsed = Date.now() - started;
+      assert.ok(!result.isError, textOf(result));
+      assert.match(textOf(result), /gemini-3\.8-flash didn't answer within 20s, so this ran on gemini-3\.7-flash/);
+      assert.ok(elapsed < 30_000, `took ${elapsed} ms`);
+    } finally {
+      await client.close();
+      await app.close();
+      await mock.close();
+    }
+  });
+});
+
 describe('HTTP server, paid tier', () => {
   let mock: MockGemini;
   let app: RunningApp;

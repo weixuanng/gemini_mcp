@@ -1,5 +1,5 @@
 import type { GeminiConfig, Tier } from '../config.js';
-import { GeminiApiError, type GeminiClient, type RequestOptions } from './client.js';
+import { GeminiApiError, GeminiTimeoutError, type GeminiClient, type RequestOptions } from './client.js';
 import type { CreateInteractionBody, InputContent, Interaction, ThinkingLevel, ToolSpec } from './types.js';
 import { log } from '../util/log.js';
 
@@ -27,6 +27,9 @@ interface Plan {
   model: string;
   thinkingLevel?: ThinkingLevel;
 }
+
+/** Time one model gets before a backup model is tried (when a backup exists and time remains). */
+const PER_MODEL_BUDGET_MS = 20_000;
 
 const THINKING_BY_DEPTH: Record<Depth, ThinkingLevel> = { quick: 'low', standard: 'medium', deep: 'high' };
 
@@ -95,10 +98,23 @@ export class GeminiRunner {
     // Each fallback is used at most once: thinking level, deep model, free-tier search model, no search.
     for (;;) {
       const body = this.buildBody(task, plan, search, thinkingDisabled);
+      // Leave room for a backup model if this one hangs (Gemini sometimes queues requests under high demand).
+      const canFallBack = overloadFallbacks.length > 0 && plan.model !== this.cfg.freeSearchModel;
+      const attemptDeadline =
+        canFallBack && opts.deadline - Date.now() > PER_MODEL_BUDGET_MS + 10_000
+          ? Date.now() + PER_MODEL_BUDGET_MS
+          : opts.deadline;
       try {
-        const interaction = await this.client.createInteraction(body, opts);
+        const interaction = await this.client.createInteraction(body, { ...opts, deadline: attemptDeadline });
         return { interaction, model: plan.model, notes, toolsLabel: toolsLabel({ ...task, search }) };
       } catch (err) {
+        if (err instanceof GeminiTimeoutError && attemptDeadline < opts.deadline && !opts.signal?.aborted) {
+          const next = overloadFallbacks.shift()!;
+          log.warn('Model did not answer in time; trying a fallback model', { model: plan.model, fallback: next });
+          notes.push(`${plan.model} didn't answer within ${PER_MODEL_BUDGET_MS / 1000}s, so this ran on ${next}.`);
+          plan = this.withThinking(next, task.depth);
+          continue;
+        }
         if (!(err instanceof GeminiApiError)) throw err;
 
         if (task.threadId && looksLikeMissingThread(err)) {
